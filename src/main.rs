@@ -14,7 +14,7 @@ enum Direction {
 }
 
 /// A struct representing a single grid cell in a 2D maze.
-#[derive(Copy, Clone)]
+#[derive(Copy, Clone, Debug)]
 struct Cell {
     // Whether or not this cell has already been processed ("visited")
     visited: bool,
@@ -76,7 +76,7 @@ impl Map {
 
     /// Builds a valid, "solvable" maze using a randomized version of Prim's
     /// algorithm.
-    pub fn build_maze(&mut self) {
+    fn build_maze(&mut self) {
         let mut rng = rand::thread_rng();
 
         // We could use a `HashSet` here, but Rust's `HashSet` does not offer constant
@@ -128,9 +128,14 @@ impl Map {
             // Open a path between the last cell and the chosen neighbor
             self.open_path_between(to, from);
 
+            if frontier.is_empty() && potential_front.is_empty() {
+                break;
+            }
+
             // Build up the frontier
             frontier.extend_from_slice(&potential_front);
         }
+
     }
 
     /// Opens a path between cells `to` and `from`. For example, if `to` is
@@ -245,9 +250,49 @@ impl std::fmt::Debug for Map {
     }
 }
 
+//impl std::fmt::Debug for Map {
+//    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+//        for row_index in 0..self.dimensions.0 {
+//            // Print line above
+//            for col_index in 0..self.dimensions.1 {
+//                // Can we move up from this cell?
+//                if self.get_cell(row_index, col_index).n {
+//                    write!(f, "◼◻◻◻");
+//                } else {
+//                    write!(f, "◼◼◼◼");
+//                }
+//                if col_index == self.dimensions.1 - 1 {
+//                    write!(f, "◼\n");
+//                }
+//            }
+//
+//            // Print middle (cell) line
+//            for col_index in 0..self.dimensions.1 {
+//                // Can we move left from this cell?
+//                if self.get_cell(row_index, col_index).w {
+//                    write!(f, "◻◻◻◻");
+//                } else {
+//                    write!(f, "◼◻◻◻");
+//                }
+//                if col_index == self.dimensions.1 - 1 {
+//                    write!(f, "◼\n");
+//                }
+//            }
+//
+//            if row_index == self.dimensions.1 - 1 {
+//                for _ in 0..self.dimensions.1 {
+//                    write!(f, "◼◼◼◼");
+//                }
+//                write!(f, "◼\n");
+//            }
+//        }
+//        Ok(())
+//    }
+//}
+
 fn main() {
-    let mut map = Map::new((10, 10));
-    map.build_maze();
+    let mut map = Map::new((3, 3));
+    //map.build_maze();
     map.save(Path::new("maze.txt"));
     println!("{:?}", map);
 }
