@@ -3,6 +3,7 @@ use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
+#[allow(dead_code)]
 // References: https://en.wikipedia.org/wiki/Maze_generation_algorithm
 
 /// An enum representing a cardinal direction, i.e. "north."
@@ -57,6 +58,8 @@ struct Map {
 impl Map {
     /// Constructs and populates a new map.
     pub fn new(dimensions: (usize, usize)) -> Map {
+        println!("Building map with {} rows and {} columns", dimensions.0, dimensions.1);
+
         let mut map = Map {
             dimensions,
             terrain: vec![Cell::new(); dimensions.0 * dimensions.1],
@@ -69,7 +72,10 @@ impl Map {
     /// Saves an ASCII art representation of the maze to `path`.
     pub fn save(&self, path: &Path) -> std::io::Result<()> {
         let mut file = File::create(path)?;
-        file.write_all(&format!("{:?}", self).as_bytes());
+        let header = vec![0xEF, 0xBB, 0xBF];
+        let bom = std::str::from_utf8(&header).unwrap();
+
+        file.write_all(&format!("{}{:?}", bom, self).as_bytes());
 
         Ok(())
     }
@@ -167,13 +173,13 @@ impl Map {
     /// Returns an immutable reference to cell <`i`, `j`>, where `i` is the row
     /// and `j` is the column.
     fn get_cell(&self, i: usize, j: usize) -> &Cell {
-        &self.terrain[i * self.dimensions.0 + j]
+        &self.terrain[i * self.dimensions.1 + j]
     }
 
     /// Returns a mutable reference to cell <`i`, `j`>, where `i` is the row
     /// and `j` is the column.
     fn get_cell_mut(&mut self, i: usize, j: usize) -> &mut Cell {
-        &mut self.terrain[i * self.dimensions.0 + j]
+        &mut self.terrain[i * self.dimensions.1 + j]
     }
 
     /// Sets cell <`i`, `j`> to `cell` (effectively replacing the old cell).
@@ -217,12 +223,12 @@ impl std::fmt::Debug for Map {
             for col_index in 0..self.dimensions.1 {
                 // Can we move up from this cell?
                 if self.get_cell(row_index, col_index).n {
-                    write!(f, "+  ");
+                    write!(f, "◼◻◻")?;
                 } else {
-                    write!(f, "+--");
+                    write!(f, "◼◼◼")?;
                 }
                 if col_index == self.dimensions.1 - 1 {
-                    write!(f, "+\n");
+                    write!(f, "◼\n")?;
                 }
             }
 
@@ -230,69 +236,40 @@ impl std::fmt::Debug for Map {
             for col_index in 0..self.dimensions.1 {
                 // Can we move left from this cell?
                 if self.get_cell(row_index, col_index).w {
-                    write!(f, "   ");
+                    write!(f, "◻◻◻")?;
                 } else {
-                    write!(f, "|  ");
+                    write!(f, "◼◻◻")?;
                 }
                 if col_index == self.dimensions.1 - 1 {
-                    write!(f, "|\n");
+                    write!(f, "◼\n")?;
+                }
+            }
+            // Print middle (cell) line
+            for col_index in 0..self.dimensions.1 {
+                // Can we move left from this cell?
+                if self.get_cell(row_index, col_index).w {
+                    write!(f, "◻◻◻")?;
+                } else {
+                    write!(f, "◼◻◻")?;
+                }
+                if col_index == self.dimensions.1 - 1 {
+                    write!(f, "◼\n")?;
                 }
             }
 
-            if row_index == self.dimensions.1 - 1 {
+            if row_index == self.dimensions.0 - 1 {
                 for _ in 0..self.dimensions.1 {
-                    write!(f, "+--");
+                    write!(f, "◼◼◼")?;
                 }
-                write!(f, "+\n");
+                write!(f, "◼\n")?;
             }
         }
         Ok(())
     }
 }
 
-//impl std::fmt::Debug for Map {
-//    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-//        for row_index in 0..self.dimensions.0 {
-//            // Print line above
-//            for col_index in 0..self.dimensions.1 {
-//                // Can we move up from this cell?
-//                if self.get_cell(row_index, col_index).n {
-//                    write!(f, "◼◻◻◻");
-//                } else {
-//                    write!(f, "◼◼◼◼");
-//                }
-//                if col_index == self.dimensions.1 - 1 {
-//                    write!(f, "◼\n");
-//                }
-//            }
-//
-//            // Print middle (cell) line
-//            for col_index in 0..self.dimensions.1 {
-//                // Can we move left from this cell?
-//                if self.get_cell(row_index, col_index).w {
-//                    write!(f, "◻◻◻◻");
-//                } else {
-//                    write!(f, "◼◻◻◻");
-//                }
-//                if col_index == self.dimensions.1 - 1 {
-//                    write!(f, "◼\n");
-//                }
-//            }
-//
-//            if row_index == self.dimensions.1 - 1 {
-//                for _ in 0..self.dimensions.1 {
-//                    write!(f, "◼◼◼◼");
-//                }
-//                write!(f, "◼\n");
-//            }
-//        }
-//        Ok(())
-//    }
-//}
-
 fn main() {
-    let mut map = Map::new((3, 3));
-    //map.build_maze();
+    let map = Map::new((10, 10));
     map.save(Path::new("maze.txt"));
     println!("{:?}", map);
 }
