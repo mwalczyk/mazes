@@ -2,7 +2,7 @@
 🍭 A program for generating mazes.
 
 <p align="center">
-  <img src="https://github.com/mwalczyk/mazes/blob/master/screenshots/generated.png" alt="screenshot" width="400" height="auto"/>
+  <img src="https://github.com/mwalczyk/mazes/blob/master/screenshots/animation.gif" alt="screenshot" width="400" height="auto"/>
 </p>
 
 ## Description
