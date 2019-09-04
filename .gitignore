@@ -6,5 +6,5 @@
 .idea
 *.iml
 
-# Exported mazes
+# Text files
 *.txt
