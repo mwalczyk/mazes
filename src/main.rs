@@ -69,13 +69,26 @@ impl Map {
         map
     }
 
+    /// Returns the dimensions (width, height) of the map.
+    pub fn get_dimensions(&self) -> (usize, usize) {
+        self.dimensions
+    }
+
+    /// Returns an immutable reference to the map's terrain, which is a 1D
+    /// vector of `Cell` structs.
+    pub fn get_terrain(&self) -> &Vec<Cell> {
+        &self.terrain
+    }
+
     /// Saves an ASCII art representation of the maze to `path`.
-    pub fn save(&self, path: &Path) -> std::io::Result<()> {
+    pub fn save_ascii(&self, path: &Path) -> std::io::Result<()> {
         let mut file = File::create(path)?;
+
+        // Add a BOM unicode character (maybe not always necessary?)
         let header = vec![0xEF, 0xBB, 0xBF];
         let bom = std::str::from_utf8(&header).unwrap();
 
-        file.write_all(&format!("{}{:?}", bom, self).as_bytes());
+        file.write_all(&format!("{}{:?}", bom, self).as_bytes())?;
 
         Ok(())
     }
@@ -183,6 +196,7 @@ impl Map {
     }
 
     /// Sets cell <`i`, `j`> to `cell` (effectively replacing the old cell).
+    #[allow(dead_code)]
     fn set_cell(&mut self, i: usize, j: usize, cell: &Cell) {
         *self.get_cell_mut(i, j) = *cell;
     }
@@ -218,46 +232,38 @@ impl Map {
 
 impl std::fmt::Debug for Map {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        for row_index in 0..self.dimensions.0 {
-            // Print line above
-            for col_index in 0..self.dimensions.1 {
+        for row in 0..self.dimensions.0 {
+
+            // Print the line above this row
+            for col in 0..self.dimensions.1 {
                 // Can we move up from this cell?
-                if self.get_cell(row_index, col_index).n {
+                if self.get_cell(row, col).n {
                     write!(f, "◼◻◻")?;
                 } else {
                     write!(f, "◼◼◼")?;
                 }
-                if col_index == self.dimensions.1 - 1 {
+                if col == self.dimensions.1 - 1 {
                     write!(f, "◼\n")?;
                 }
             }
 
-            // Print middle (cell) line
-            for col_index in 0..self.dimensions.1 {
-                // Can we move left from this cell?
-                if self.get_cell(row_index, col_index).w {
-                    write!(f, "◻◻◻")?;
-                } else {
-                    write!(f, "◼◻◻")?;
-                }
-                if col_index == self.dimensions.1 - 1 {
-                    write!(f, "◼\n")?;
-                }
-            }
-            // Print middle (cell) line
-            for col_index in 0..self.dimensions.1 {
-                // Can we move left from this cell?
-                if self.get_cell(row_index, col_index).w {
-                    write!(f, "◻◻◻")?;
-                } else {
-                    write!(f, "◼◻◻")?;
-                }
-                if col_index == self.dimensions.1 - 1 {
-                    write!(f, "◼\n")?;
+            // Print the middle (cell) line (twice, because of unicode spacing)
+            for _ in 0..2 {
+                for col in 0..self.dimensions.1 {
+                    // Can we move left from this cell?
+                    if self.get_cell(row, col).w {
+                        write!(f, "◻◻◻")?;
+                    } else {
+                        write!(f, "◼◻◻")?;
+                    }
+                    if col == self.dimensions.1 - 1 {
+                        write!(f, "◼\n")?;
+                    }
                 }
             }
 
-            if row_index == self.dimensions.0 - 1 {
+            // If this is the last row, add an additional line of chars below
+            if row == self.dimensions.0 - 1 {
                 for _ in 0..self.dimensions.1 {
                     write!(f, "◼◼◼")?;
                 }
@@ -268,10 +274,13 @@ impl std::fmt::Debug for Map {
     }
 }
 
-fn main() {
+// See: https://www.joshmcguigan.com/blog/custom-exit-status-codes-rust/
+fn main() -> std::io::Result<()> {
     let map = Map::new((10, 10));
-    map.save(Path::new("maze.txt"));
+    map.save_ascii(Path::new("maze.txt"))?;
     println!("{:?}", map);
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -299,7 +308,7 @@ mod tests {
     }
 
     #[test]
-    fn test_open_path_between() {
+    fn test_open_path_between_0() {
         let mut map = Map::new((4, 4));
         map.open_path_between((0, 0), (1, 0));
 
@@ -308,5 +317,17 @@ mod tests {
 
         assert!(to.s);
         assert!(from.n);
+    }
+
+    #[test]
+    fn test_open_path_between_1() {
+        let mut map = Map::new((4, 4));
+        map.open_path_between((0, 0), (0, 1));
+
+        let to = map.get_cell(0, 0);
+        let from = map.get_cell(0, 1);
+
+        assert!(to.e);
+        assert!(from.w);
     }
 }
