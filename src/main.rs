@@ -65,7 +65,7 @@ impl Map {
             terrain: vec![Cell::new(); dimensions.0 * dimensions.1],
         };
 
-        map.build_maze(false);
+        map.randomized_prims(false);
         map
     }
 
@@ -93,9 +93,92 @@ impl Map {
         Ok(())
     }
 
+    /// A method for randomly generating mazes.
+    ///
+    /// Reference: `https://en.wikipedia.org/wiki/Maze_generation_algorithm`
+    fn recursive_backtracker(&mut self) {
+        let mut rng = rand::thread_rng();
+
+        // Make the initial cell the current cell and mark it as visited
+        let mut current_indices = (
+            rng.gen_range(0, self.dimensions.0),
+            rng.gen_range(0, self.dimensions.1),
+        );
+        self.get_cell_mut(current_indices.0, current_indices.1).visited = true;
+
+        loop {
+            // If the current cell has any neighbors which have not been visited:
+            // (1) Choose randomly one of the unvisited neighbors
+            // (2) Push the current cell to the stack
+            // (3) Remove the wall between the current cell and the chosen cell
+            // (4) Make the chosen cell the current cell and mark it as visited
+            let neighbors = self.get_neighbor_indices(current_indices.0, current_indices.1);
+
+            let mut potential_paths = vec![];
+
+            for neighbor in neighbors.iter() {
+                if !self.get_cell(neighbor.0, neighbor.1).visited {
+                    // This cell hasn't been visited already - we can build a path from it
+                    potential_paths.push(*neighbor);
+                }
+            }
+
+            // Else if stack is not empty:
+            // (1) Pop a cell from the stack
+            // (2) Make it the current cell
+            if potential_paths.is_empty() {
+
+                // TODO: if cells "knew" where they were on the grid, we could do this...
+                //if let Some(cell) = self.terrain.iter().find(|&cell| !cell.visited) {
+                //    current_indices = cell;
+                //}
+
+                // Find a random cell that has not yet been visited
+                let mut found = false;
+
+                'outer: for row in 0..self.dimensions.0 {
+                    'inner: for col in 0..self.dimensions.1 {
+                        if !self.get_cell(row, col).visited {
+                            // Set the found cell to the current cell, mark it as `visited`, and recurse
+                            current_indices = (row, col);
+                            self.get_cell_mut(current_indices.0, current_indices.1).visited = true;
+
+                            found = true;
+
+                            // Break out of both loops: probably a cleaner way to do this...
+                            break 'outer;
+                        }
+                    }
+                }
+
+                if !found {
+                    // A new, candidate cell was not found - simply end the program
+                    break;
+                } else {
+                    // A new, candidate cell was found - continue with the rest of the routine
+                    continue;
+                }
+            }
+
+            // Choose one of the unvisited neighbors at random
+            let random_index = rng.gen_range(0, potential_paths.len());
+            let from = potential_paths.remove(random_index);
+            let to = current_indices;
+
+            // Open a path between the last cell and the chosen neighbor
+            self.open_path_between(to, from);
+
+            // Mark the current cell as `visited` and recurse
+            current_indices = from;
+            self.get_cell_mut(current_indices.0, current_indices.1).visited = true;
+        }
+    }
+
     /// Builds a valid, "solvable" maze using a randomized version of Prim's
     /// algorithm.
-    fn build_maze(&mut self, save_progress: bool) {
+    ///
+    /// Reference: `https://en.wikipedia.org/wiki/Maze_generation_algorithm`
+    fn randomized_prims(&mut self, save_progress: bool) {
         let mut rng = rand::thread_rng();
 
         // We could use a `HashSet` here, but Rust's `HashSet` does not offer constant
@@ -120,7 +203,7 @@ impl Map {
             // Save out .txt files as the maze is being built
             if save_progress {
                 self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration)));
-                i += 1;
+                iteration += 1;
             }
 
             // Choose one of the frontier cells at random
@@ -162,7 +245,7 @@ impl Map {
             // Build up the frontier
             frontier.extend_from_slice(&potential_front);
         }
-        self.save_ascii(Path::new(&format!("iters/iter_{}.txt", i)));
+        self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration)));
 
     }
 
