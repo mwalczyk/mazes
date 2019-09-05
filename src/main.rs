@@ -65,7 +65,7 @@ impl Map {
             terrain: vec![Cell::new(); dimensions.0 * dimensions.1],
         };
 
-        map.build_maze();
+        map.build_maze(false);
         map
     }
 
@@ -95,7 +95,7 @@ impl Map {
 
     /// Builds a valid, "solvable" maze using a randomized version of Prim's
     /// algorithm.
-    fn build_maze(&mut self) {
+    fn build_maze(&mut self, save_progress: bool) {
         let mut rng = rand::thread_rng();
 
         // We could use a `HashSet` here, but Rust's `HashSet` does not offer constant
@@ -113,8 +113,16 @@ impl Map {
         // a "frontier" of candidate cells
         frontier.extend_from_slice(&self.get_neighbor_indices(start_indices.0, start_indices.1));
 
+        let mut iteration = 0;
+
         // Keep going until there are no more candidate cells
         while !frontier.is_empty() {
+            // Save out .txt files as the maze is being built
+            if save_progress {
+                self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration)));
+                i += 1;
+            }
+
             // Choose one of the frontier cells at random
             let random_index = rng.gen_range(0, frontier.len());
             let next_indices = frontier.remove(random_index);
@@ -154,6 +162,7 @@ impl Map {
             // Build up the frontier
             frontier.extend_from_slice(&potential_front);
         }
+        self.save_ascii(Path::new(&format!("iters/iter_{}.txt", i)));
 
     }
 
@@ -250,11 +259,15 @@ impl std::fmt::Debug for Map {
             // Print the middle (cell) line (twice, because of unicode spacing)
             for _ in 0..2 {
                 for col in 0..self.dimensions.1 {
-                    // Can we move left from this cell?
-                    if self.get_cell(row, col).w {
-                        write!(f, "◻◻◻")?;
+                    if self.get_cell(row, col).visited {
+                        // Can we move left from this cell?
+                        if self.get_cell(row, col).w {
+                            write!(f, "◻◻◻")?;
+                        } else {
+                            write!(f, "◼◻◻")?;
+                        }
                     } else {
-                        write!(f, "◼◻◻")?;
+                        write!(f, "◼◼◼")?;
                     }
                     if col == self.dimensions.1 - 1 {
                         write!(f, "◼\n")?;
@@ -276,7 +289,7 @@ impl std::fmt::Debug for Map {
 
 // See: https://www.joshmcguigan.com/blog/custom-exit-status-codes-rust/
 fn main() -> std::io::Result<()> {
-    let map = Map::new((10, 10));
+    let map = Map::new((20, 20));
     map.save_ascii(Path::new("maze.txt"))?;
     println!("{:?}", map);
 
