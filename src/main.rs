@@ -1,9 +1,10 @@
+#![allow(dead_code)]
+
 use rand::Rng;
 use std::fs::File;
 use std::io::Write;
 use std::path::Path;
 
-#[allow(dead_code)]
 // References: https://en.wikipedia.org/wiki/Maze_generation_algorithm
 
 /// An enum representing a cardinal direction, i.e. "north."
@@ -12,6 +13,11 @@ enum Direction {
     S,
     E,
     W,
+}
+
+enum Generator {
+    RandomizedPrims,
+    RecursiveBacktracking,
 }
 
 /// A struct representing a single grid cell in a 2D maze.
@@ -43,6 +49,13 @@ impl Cell {
             w: false,
         }
     }
+
+    /// Returns `true` if this cell has at least one neighboring wall that is "closed,"
+    /// and `false` otherwise. For example, if `self.n` is `false`, this means that the wall
+    /// between this cell and its neighbor to the north (above) is closed.
+    pub fn has_uncarved_walls(&self) -> bool {
+        !self.n || !self.s || !self.e || !self.w
+    }
 }
 
 /// A struct representing a game map that is filled from edge-to-edge by a
@@ -58,14 +71,17 @@ struct Map {
 impl Map {
     /// Constructs and populates a new map.
     pub fn new(dimensions: (usize, usize)) -> Map {
-        println!("Building map with {} rows and {} columns", dimensions.0, dimensions.1);
+        println!(
+            "Building map with {} rows and {} columns",
+            dimensions.0, dimensions.1
+        );
 
         let mut map = Map {
             dimensions,
             terrain: vec![Cell::new(); dimensions.0 * dimensions.1],
         };
 
-        map.randomized_prims(false);
+        map.build_maze(Generator::RecursiveBacktracking);
         map
     }
 
@@ -93,25 +109,39 @@ impl Map {
         Ok(())
     }
 
+    fn build_maze(&mut self, generator: Generator) {
+        match generator {
+            Generator::RandomizedPrims => self.randomized_prims(false),
+            _ => self.recursive_backtracking(false),
+        }
+    }
+
     /// A method for randomly generating mazes.
     ///
     /// Reference: `https://en.wikipedia.org/wiki/Maze_generation_algorithm`
-    fn recursive_backtracker(&mut self) {
+    fn recursive_backtracking(&mut self, save_progress: bool) {
         let mut rng = rand::thread_rng();
 
-        // Make the initial cell the current cell and mark it as visited
+        // Start at a random cell
         let mut current_indices = (
             rng.gen_range(0, self.dimensions.0),
             rng.gen_range(0, self.dimensions.1),
         );
-        self.get_cell_mut(current_indices.0, current_indices.1).visited = true;
+        self.get_cell_mut(current_indices.0, current_indices.1)
+            .visited = true;
 
-        loop {
-            // If the current cell has any neighbors which have not been visited:
-            // (1) Choose randomly one of the unvisited neighbors
-            // (2) Push the current cell to the stack
-            // (3) Remove the wall between the current cell and the chosen cell
-            // (4) Make the chosen cell the current cell and mark it as visited
+        // Set up a stack for backtracking
+        let mut stack: Vec<(usize, usize)> = vec![];
+
+        let mut iteration = 0;
+
+        'outer: loop {
+            // Save out .txt files as the maze is being built
+            if save_progress {
+                self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration))).unwrap();
+                iteration += 1;
+            }
+
             let neighbors = self.get_neighbor_indices(current_indices.0, current_indices.1);
 
             let mut potential_paths = vec![];
@@ -123,41 +153,23 @@ impl Map {
                 }
             }
 
-            // Else if stack is not empty:
-            // (1) Pop a cell from the stack
-            // (2) Make it the current cell
             if potential_paths.is_empty() {
-
-                // TODO: if cells "knew" where they were on the grid, we could do this...
-                //if let Some(cell) = self.terrain.iter().find(|&cell| !cell.visited) {
-                //    current_indices = cell;
-                //}
-
-                // Find a random cell that has not yet been visited
-                let mut found = false;
-
-                'outer: for row in 0..self.dimensions.0 {
-                    'inner: for col in 0..self.dimensions.1 {
-                        if !self.get_cell(row, col).visited {
-                            // Set the found cell to the current cell, mark it as `visited`, and recurse
-                            current_indices = (row, col);
-                            self.get_cell_mut(current_indices.0, current_indices.1).visited = true;
-
-                            found = true;
-
-                            // Break out of both loops: probably a cleaner way to do this...
-                            break 'outer;
+                'inner: loop {
+                    if let Some(indices) = stack.pop() {
+                        // Work backwards and find the first cell that has at least one "closed" wall
+                        if self.get_cell(indices.0, indices.1).has_uncarved_walls() {
+                            // Set this to the current cell and return to the beginning
+                            current_indices = indices;
+                            break 'inner;
                         }
+                    } else {
+                        // The stack is empty - end the recursion
+                        break 'outer;
                     }
                 }
 
-                if !found {
-                    // A new, candidate cell was not found - simply end the program
-                    break;
-                } else {
-                    // A new, candidate cell was found - continue with the rest of the routine
-                    continue;
-                }
+                // We have a new "starting" cell - go back to the beginning of the algorithm
+                continue;
             }
 
             // Choose one of the unvisited neighbors at random
@@ -170,8 +182,13 @@ impl Map {
 
             // Mark the current cell as `visited` and recurse
             current_indices = from;
-            self.get_cell_mut(current_indices.0, current_indices.1).visited = true;
+            self.get_cell_mut(current_indices.0, current_indices.1)
+                .visited = true;
+
+            // Add this cell to the stack - it may be visited again in the backwards pass
+            stack.push(current_indices);
         }
+        self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration))).unwrap();
     }
 
     /// Builds a valid, "solvable" maze using a randomized version of Prim's
@@ -202,7 +219,7 @@ impl Map {
         while !frontier.is_empty() {
             // Save out .txt files as the maze is being built
             if save_progress {
-                self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration)));
+                self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration))).unwrap();
                 iteration += 1;
             }
 
@@ -245,8 +262,7 @@ impl Map {
             // Build up the frontier
             frontier.extend_from_slice(&potential_front);
         }
-        self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration)));
-
+        self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration))).unwrap();
     }
 
     /// Opens a path between cells `to` and `from`. For example, if `to` is
@@ -288,7 +304,6 @@ impl Map {
     }
 
     /// Sets cell <`i`, `j`> to `cell` (effectively replacing the old cell).
-    #[allow(dead_code)]
     fn set_cell(&mut self, i: usize, j: usize, cell: &Cell) {
         *self.get_cell_mut(i, j) = *cell;
     }
@@ -325,7 +340,6 @@ impl Map {
 impl std::fmt::Debug for Map {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         for row in 0..self.dimensions.0 {
-
             // Print the line above this row
             for col in 0..self.dimensions.1 {
                 // Can we move up from this cell?
@@ -372,7 +386,7 @@ impl std::fmt::Debug for Map {
 
 // See: https://www.joshmcguigan.com/blog/custom-exit-status-codes-rust/
 fn main() -> std::io::Result<()> {
-    let map = Map::new((20, 20));
+    let map = Map::new((30, 30));
     map.save_ascii(Path::new("maze.txt"))?;
     println!("{:?}", map);
 
