@@ -50,11 +50,10 @@ impl Cell {
         }
     }
 
-    /// Returns `true` if this cell has at least one neighboring wall that is "closed,"
-    /// and `false` otherwise. For example, if `self.n` is `false`, this means that the wall
-    /// between this cell and its neighbor to the north (above) is closed.
-    pub fn has_uncarved_walls(&self) -> bool {
-        !self.n || !self.s || !self.e || !self.w
+    /// Returns `true` if all passages leading to this cell are "open," and
+    /// `false` otherwise.
+    pub fn is_completely_open(&self) -> bool {
+        self.n && self.s && self.e && self.w
     }
 }
 
@@ -109,10 +108,11 @@ impl Map {
         Ok(())
     }
 
+    /// Builds a maze using the specified `generator`.
     fn build_maze(&mut self, generator: Generator) {
         match generator {
             Generator::RandomizedPrims => self.randomized_prims(false),
-            _ => self.recursive_backtracking(false),
+            Generator::RecursiveBacktracking => self.recursive_backtracking(false),
         }
     }
 
@@ -138,26 +138,18 @@ impl Map {
         'outer: loop {
             // Save out .txt files as the maze is being built
             if save_progress {
-                self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration))).unwrap();
+                self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration)))
+                    .unwrap();
                 iteration += 1;
             }
 
-            let neighbors = self.get_neighbor_indices(current_indices.0, current_indices.1);
-
-            let mut potential_paths = vec![];
-
-            for neighbor in neighbors.iter() {
-                if !self.get_cell(neighbor.0, neighbor.1).visited {
-                    // This cell hasn't been visited already - we can build a path from it
-                    potential_paths.push(*neighbor);
-                }
-            }
+            let potential_paths = self.get_unvisited_neighbor_indices(current_indices.0, current_indices.1);
 
             if potential_paths.is_empty() {
                 'inner: loop {
                     if let Some(indices) = stack.pop() {
                         // Work backwards and find the first cell that has at least one "closed" wall
-                        if self.get_cell(indices.0, indices.1).has_uncarved_walls() {
+                        if !self.get_cell(indices.0, indices.1).is_completely_open() {
                             // Set this to the current cell and return to the beginning
                             current_indices = indices;
                             break 'inner;
@@ -174,7 +166,7 @@ impl Map {
 
             // Choose one of the unvisited neighbors at random
             let random_index = rng.gen_range(0, potential_paths.len());
-            let from = potential_paths.remove(random_index);
+            let from = potential_paths[random_index];
             let to = current_indices;
 
             // Open a path between the last cell and the chosen neighbor
@@ -188,7 +180,10 @@ impl Map {
             // Add this cell to the stack - it may be visited again in the backwards pass
             stack.push(current_indices);
         }
-        self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration))).unwrap();
+        if save_progress {
+            self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration)))
+                .unwrap();
+        }
     }
 
     /// Builds a valid, "solvable" maze using a randomized version of Prim's
@@ -219,7 +214,8 @@ impl Map {
         while !frontier.is_empty() {
             // Save out .txt files as the maze is being built
             if save_progress {
-                self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration))).unwrap();
+                self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration)))
+                    .unwrap();
                 iteration += 1;
             }
 
@@ -230,26 +226,12 @@ impl Map {
             // Set this cell's `visited` flag, denoting that it is now part of the final maze
             self.get_cell_mut(next_indices.0, next_indices.1).visited = true;
 
-            let neighbors = self.get_neighbor_indices(next_indices.0, next_indices.1);
-
-            let mut potential_paths = vec![];
-            let mut potential_front = vec![];
-
-            for neighbor in neighbors.iter() {
-                if self.get_cell(neighbor.0, neighbor.1).visited {
-                    // This cell has been visited already - we can build a path from it
-                    potential_paths.push(*neighbor);
-                } else {
-                    // This cell hasn't been visited yet - it will be added to the frontier
-                    if !frontier.contains(neighbor) {
-                        potential_front.push(*neighbor);
-                    }
-                }
-            }
+            let potential_paths = self.get_visited_neighbor_indices(next_indices.0, next_indices.1);
+            let potential_front = self.get_unvisited_neighbor_indices(next_indices.0, next_indices.1);
 
             // Choose one of the visited neighbors at random
             let random_index = rng.gen_range(0, potential_paths.len());
-            let from = potential_paths.remove(random_index);
+            let from = potential_paths[random_index];
             let to = next_indices;
 
             // Open a path between the last cell and the chosen neighbor
@@ -259,10 +241,18 @@ impl Map {
                 break;
             }
 
-            // Build up the frontier
-            frontier.extend_from_slice(&potential_front);
+            // Build up the frontier, keeping sure to not re-add indices that are
+            // already part of the frontier
+            for neighbor in potential_front.iter() {
+                if !frontier.contains(neighbor) {
+                    frontier.push(*neighbor);
+                }
+            }
         }
-        self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration))).unwrap();
+        if save_progress {
+            self.save_ascii(Path::new(&format!("iteration_{}.txt", iteration)))
+                .unwrap();
+        }
     }
 
     /// Opens a path between cells `to` and `from`. For example, if `to` is
@@ -291,6 +281,19 @@ impl Map {
         }
     }
 
+    /// Given a 1D index into this map's array of cells, returns the 2D
+    /// grid index <`i`, `j`> corresponding to this cell's position in the
+    /// terrain.
+    fn absolute_to_grid_indices(&self, idx: usize) -> (usize, usize) {
+        // Row
+        let i = idx / self.dimensions.1;
+
+        // Column
+        let j = idx % self.dimensions.1;
+
+        (i, j)
+    }
+
     /// Returns an immutable reference to cell <`i`, `j`>, where `i` is the row
     /// and `j` is the column.
     fn get_cell(&self, i: usize, j: usize) -> &Cell {
@@ -306,6 +309,22 @@ impl Map {
     /// Sets cell <`i`, `j`> to `cell` (effectively replacing the old cell).
     fn set_cell(&mut self, i: usize, j: usize, cell: &Cell) {
         *self.get_cell_mut(i, j) = *cell;
+    }
+
+    fn get_unvisited_neighbor_indices(&self, i: usize, j: usize) -> Vec<(usize, usize)> {
+        self.get_neighbor_indices(i, j)
+            .iter()
+            .cloned()
+            .filter(|(ni, nj)| !self.get_cell(*ni, *nj).visited)
+            .collect()
+    }
+
+    fn get_visited_neighbor_indices(&self, i: usize, j: usize) -> Vec<(usize, usize)> {
+        self.get_neighbor_indices(i, j)
+            .iter()
+            .cloned()
+            .filter(|(ni, nj)| self.get_cell(*ni, *nj).visited)
+            .collect()
     }
 
     /// Returns the indices of all of the valid neighbors of cell <`i`, `j`>,
@@ -397,6 +416,33 @@ fn main() -> std::io::Result<()> {
 mod tests {
     use super::*;
 
+    #[test]
+    fn test_absolute_to_grid_indices() {
+        let map = Map::new((3, 4));
+
+        let mut actual = vec![];
+
+        for idx in 0..map.get_terrain().len() {
+            actual.push(map.absolute_to_grid_indices(idx));
+        }
+
+        let expected = vec![
+            (0, 0),
+            (0, 1),
+            (0, 2),
+            (0, 3),
+            (1, 0),
+            (1, 1),
+            (1, 2),
+            (1, 3),
+            (2, 0),
+            (2, 1),
+            (2, 2),
+            (2, 3),
+        ];
+
+        assert_eq!(actual, expected);
+    }
     #[test]
     fn test_get_neighbor_indices_0() {
         let map = Map::new((4, 4));
