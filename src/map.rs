@@ -1,3 +1,4 @@
+use crate::generators::{Generator, Prims};
 use rand::Rng;
 use std::fs::File;
 use std::io::Write;
@@ -8,20 +9,12 @@ use std::path::Path;
 // https://www.redblobgames.com/pathfinding/a-star/introduction.html
 // https://www.redblobgames.com/pathfinding/a-star/implementation.html
 
-pub enum Generator {
-    // A randomized Prim's algorithm
-    Prims,
-
-    // A recursive backtracking algorithm
-    Backtracking,
-}
-
 /// A struct representing a single grid cell in a 2D maze. All cells start out as walls,
 /// i.e. where `visited` is `false`.
 #[derive(Copy, Clone, Debug)]
 pub struct Cell {
     // Whether or not this cell has already been processed ("visited")
-    visited: bool,
+    pub(crate) visited: bool,
 
     // Whether or not we can travel north from this cell
     pub n: bool,
@@ -34,9 +27,6 @@ pub struct Cell {
 
     // Whether or not we can travel west from this cell
     pub w: bool,
-
-    // The index in which this cell was processed during the maze generation routine
-    traversal_index: usize,
 }
 
 impl Cell {
@@ -47,7 +37,6 @@ impl Cell {
             s: false,
             e: false,
             w: false,
-            traversal_index: 0,
         }
     }
 
@@ -71,17 +60,14 @@ pub struct Map {
 impl Map {
     /// Constructs and populates a new map.
     pub fn new(dimensions: (usize, usize)) -> Map {
-        println!(
-            "Building map with {} rows and {} columns",
-            dimensions.0, dimensions.1
-        );
-
         let mut map = Map {
             dimensions,
             terrain: vec![Cell::new(); dimensions.0 * dimensions.1],
         };
 
-        map.build_maze(Generator::Backtracking);
+        let generator = Prims {};
+
+        map.build_maze(generator);
         map
     }
 
@@ -110,146 +96,15 @@ impl Map {
     }
 
     /// Builds a maze using the specified `generator`.
-    fn build_maze(&mut self, generator: Generator) {
-        match generator {
-            Generator::Prims => self.randomized_prims(None),
-            Generator::Backtracking => self.recursive_backtracking(None),
-        }
-    }
-
-    /// A method for randomly generating mazes.
-    ///
-    /// Reference: `https://en.wikipedia.org/wiki/Maze_generation_algorithm`
-    fn recursive_backtracking(&mut self, each_iteration: Option<&dyn Fn(usize) -> ()>) {
-        let mut rng = rand::thread_rng();
-
-        // Start at a random cell
-        let mut current_indices = self.get_random_grid_indices();
-        self.get_cell_mut(current_indices.0, current_indices.1)
-            .visited = true;
-
-        // Set up a stack for backtracking
-        let mut stack: Vec<(usize, usize)> = vec![];
-
-        let mut iteration = 0;
-        'outer: loop {
-            self.get_cell_mut(current_indices.0, current_indices.1)
-                .traversal_index = iteration;
-
-            if let Some(function) = each_iteration {
-                function(iteration);
-                iteration += 1;
-            }
-
-            let potential_paths =
-                self.get_unvisited_neighbor_indices(current_indices.0, current_indices.1);
-
-            if potential_paths.is_empty() {
-                'inner: loop {
-                    if let Some(indices) = stack.pop() {
-                        // Work backwards and find the first cell that has at least one "closed" wall
-                        if !self.get_cell(indices.0, indices.1).is_completely_open() {
-                            // Set this to the current cell and return to the beginning
-                            current_indices = indices;
-                            break 'inner;
-                        }
-                    } else {
-                        // The stack is empty - end the recursion
-                        break 'outer;
-                    }
-                }
-
-                // We have a new "starting" cell - go back to the beginning of the algorithm
-                continue;
-            }
-
-            // Choose one of the unvisited neighbors at random
-            let from = potential_paths[rng.gen_range(0, potential_paths.len())];
-            let to = current_indices;
-
-            // Open a path between the last cell and the chosen neighbor
-            self.open_path_between(to, from);
-
-            // Mark the current cell as `visited` and recurse
-            current_indices = from;
-            self.get_cell_mut(current_indices.0, current_indices.1)
-                .visited = true;
-
-            // Add this cell to the stack - it may be visited again in the backwards pass
-            stack.push(current_indices);
-        }
-    }
-
-    /// Builds a valid, "solvable" maze using a randomized version of Prim's
-    /// algorithm.
-    ///
-    /// Reference: `https://en.wikipedia.org/wiki/Maze_generation_algorithm`
-    fn randomized_prims(&mut self, each_iteration: Option<&dyn Fn(usize) -> ()>) {
-        let mut rng = rand::thread_rng();
-
-        // Start at a random cell
-        let mut current_indices = self.get_random_grid_indices();
-        self.get_cell_mut(current_indices.0, current_indices.1)
-            .visited = true;
-
-        // We could use a `HashSet` here, but Rust's `HashSet` does not offer constant
-        // time indexing, which we need below
-        let mut frontier = vec![];
-
-        // To kick off the recursion, add the "starting" cell's neighbors - this builds
-        // a "frontier" of candidate cells
-        frontier
-            .extend_from_slice(&self.get_neighbor_indices(current_indices.0, current_indices.1));
-
-        let mut iteration = 0;
-        while !frontier.is_empty() {
-            self.get_cell_mut(current_indices.0, current_indices.1)
-                .traversal_index = iteration;
-
-            if let Some(function) = each_iteration {
-                function(iteration);
-                iteration += 1;
-            }
-
-            // Choose one of the frontier cells at random
-            let random_index = rng.gen_range(0, frontier.len());
-            current_indices = frontier.remove(random_index);
-
-            // Set this cell's `visited` flag, denoting that it is now part of the final maze
-            self.get_cell_mut(current_indices.0, current_indices.1)
-                .visited = true;
-
-            let potential_paths =
-                self.get_visited_neighbor_indices(current_indices.0, current_indices.1);
-            let potential_front =
-                self.get_unvisited_neighbor_indices(current_indices.0, current_indices.1);
-
-            // Choose one of the visited neighbors at random
-            let from = potential_paths[rng.gen_range(0, potential_paths.len())];
-            let to = current_indices;
-
-            // Open a path between the last cell and the chosen neighbor
-            self.open_path_between(to, from);
-
-            if frontier.is_empty() && potential_front.is_empty() {
-                break;
-            }
-
-            // Build up the frontier, keeping sure to not re-add indices that are
-            // already part of the frontier
-            for neighbor in potential_front.iter() {
-                if !frontier.contains(neighbor) {
-                    frontier.push(*neighbor);
-                }
-            }
-        }
+    fn build_maze(&mut self, generator: impl Generator) {
+        generator.build(self);
     }
 
     /// Opens a path between cells `to` and `from`. For example, if `to` is
     /// above `from` on the map, then `to`'s "south" flag will be set to `true`,
     /// meaning that the user can travel south from `to` down to `from` and vice-versa.
-    fn open_path_between(&mut self, to: (usize, usize), from: (usize, usize)) {
-        if !self.get_neighbor_indices(to.0, to.1).contains(&from) {
+    pub(crate) fn open_path_between(&mut self, to: (usize, usize), from: (usize, usize)) {
+        if !self.get_neighbors(to.0, to.1).contains(&from) {
             panic!("Attempting to open a path between non-adjacent cells");
         }
 
@@ -289,7 +144,7 @@ impl Map {
     }
 
     /// Returns a random pair of valid grid indices.
-    fn get_random_grid_indices(&self) -> (usize, usize) {
+    pub(crate) fn get_random_grid_indices(&self) -> (usize, usize) {
         let mut rng = rand::thread_rng();
         (
             rng.gen_range(0, self.dimensions.0),
@@ -305,25 +160,24 @@ impl Map {
 
     /// Returns a mutable reference to cell <`i`, `j`>, where `i` is the row
     /// and `j` is the column.
-    fn get_cell_mut(&mut self, i: usize, j: usize) -> &mut Cell {
+    pub fn get_cell_mut(&mut self, i: usize, j: usize) -> &mut Cell {
         &mut self.terrain[i * self.dimensions.1 + j]
     }
 
-    /// Sets cell <`i`, `j`> to `cell` (effectively replacing the old cell).
-    fn set_cell(&mut self, i: usize, j: usize, cell: &Cell) {
-        *self.get_cell_mut(i, j) = *cell;
+    pub fn visit(&mut self, i: usize, j: usize) {
+        self.get_cell_mut(i, j).visited = true;
     }
 
-    fn get_unvisited_neighbor_indices(&self, i: usize, j: usize) -> Vec<(usize, usize)> {
-        self.get_neighbor_indices(i, j)
+    pub(crate) fn get_unvisited_neighbors(&self, i: usize, j: usize) -> Vec<(usize, usize)> {
+        self.get_neighbors(i, j)
             .iter()
             .cloned()
             .filter(|(ni, nj)| !self.get_cell(*ni, *nj).visited)
             .collect()
     }
 
-    fn get_visited_neighbor_indices(&self, i: usize, j: usize) -> Vec<(usize, usize)> {
-        self.get_neighbor_indices(i, j)
+    pub(crate) fn get_visited_neighbors(&self, i: usize, j: usize) -> Vec<(usize, usize)> {
+        self.get_neighbors(i, j)
             .iter()
             .cloned()
             .filter(|(ni, nj)| self.get_cell(*ni, *nj).visited)
@@ -332,7 +186,7 @@ impl Map {
 
     /// Returns the indices of all of the valid neighbors of cell <`i`, `j`>,
     /// respecting the borders of the map.
-    pub fn get_neighbor_indices(&self, i: usize, j: usize) -> Vec<(usize, usize)> {
+    pub fn get_neighbors(&self, i: usize, j: usize) -> Vec<(usize, usize)> {
         let mut neighbors = vec![];
 
         // Top
@@ -352,6 +206,33 @@ impl Map {
 
         // Right
         if j < self.dimensions.1 - 1 {
+            neighbors.push((i + 0, j + 1))
+        }
+
+        neighbors
+    }
+
+    pub fn get_open_neighbors(&self, i: usize, j: usize) -> Vec<(usize, usize)> {
+        let mut neighbors = vec![];
+        let cell = self.get_cell(i, j);
+
+        // Top
+        if cell.n && i > 0 {
+            neighbors.push((i - 1, j + 0));
+        }
+
+        // Bottom
+        if cell.s && i < self.dimensions.0 - 1 {
+            neighbors.push((i + 1, j + 0))
+        }
+
+        // Left
+        if cell.w && j > 0 {
+            neighbors.push((i + 0, j - 1))
+        }
+
+        // Right
+        if cell.e && j < self.dimensions.1 - 1 {
             neighbors.push((i + 0, j + 1))
         }
 
@@ -438,20 +319,20 @@ mod tests {
         assert_eq!(actual, expected);
     }
     #[test]
-    fn test_get_neighbor_indices_0() {
+    fn test_get_neighbors_0() {
         let map = Map::new((4, 4));
 
-        let actual = map.get_neighbor_indices(0, 0);
+        let actual = map.get_neighbors(0, 0);
         let expected = vec![(1, 0), (0, 1)];
 
         assert_eq!(actual, expected);
     }
 
     #[test]
-    fn test_get_neighbor_indices_1() {
+    fn test_get_neighbors_1() {
         let map = Map::new((4, 4));
 
-        let actual = map.get_neighbor_indices(1, 1);
+        let actual = map.get_neighbors(1, 1);
         let expected = vec![(0, 1), (2, 1), (1, 0), (1, 2)];
 
         assert_eq!(actual, expected);
