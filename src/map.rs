@@ -24,16 +24,16 @@ pub struct Cell {
     visited: bool,
 
     // Whether or not we can travel north from this cell
-    n: bool,
+    pub n: bool,
 
     // Whether or not we can travel south from this cell
-    s: bool,
+    pub s: bool,
 
     // Whether or not we can travel east from this cell
-    e: bool,
+    pub e: bool,
 
     // Whether or not we can travel west from this cell
-    w: bool,
+    pub w: bool,
 
     // The index in which this cell was processed during the maze generation routine
     traversal_index: usize,
@@ -133,7 +133,8 @@ impl Map {
 
         let mut iteration = 0;
         'outer: loop {
-            self.get_cell_mut(current_indices.0, current_indices.1).traversal_index = iteration;
+            self.get_cell_mut(current_indices.0, current_indices.1)
+                .traversal_index = iteration;
 
             if let Some(function) = each_iteration {
                 function(iteration);
@@ -202,7 +203,8 @@ impl Map {
 
         let mut iteration = 0;
         while !frontier.is_empty() {
-            self.get_cell_mut(current_indices.0, current_indices.1).traversal_index = iteration;
+            self.get_cell_mut(current_indices.0, current_indices.1)
+                .traversal_index = iteration;
 
             if let Some(function) = each_iteration {
                 function(iteration);
@@ -297,7 +299,7 @@ impl Map {
 
     /// Returns an immutable reference to cell <`i`, `j`>, where `i` is the row
     /// and `j` is the column.
-    fn get_cell(&self, i: usize, j: usize) -> &Cell {
+    pub fn get_cell(&self, i: usize, j: usize) -> &Cell {
         &self.terrain[i * self.dimensions.1 + j]
     }
 
@@ -330,7 +332,7 @@ impl Map {
 
     /// Returns the indices of all of the valid neighbors of cell <`i`, `j`>,
     /// respecting the borders of the map.
-    fn get_neighbor_indices(&self, i: usize, j: usize) -> Vec<(usize, usize)> {
+    pub fn get_neighbor_indices(&self, i: usize, j: usize) -> Vec<(usize, usize)> {
         let mut neighbors = vec![];
 
         // Top
