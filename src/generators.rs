@@ -37,7 +37,20 @@ impl Generator for Prims {
         while !frontier.is_empty() {
             //self.each_iteration(map);
 
+            // Two flags: IN and FRONTIER
+            //
+            // Mark the first cell (set it to IN and FRONTIER)
+            //
+            // Grab a random cell from the frontier
+            // Look at its list of neighbors that are already in the maze, i.e. IN is true
+            // Pull one randomly, carve a path
+            // Mark the current cell:
+            // 1. Set it to IN
+            // 2. Add all UNVISITED neighbors to the frontier (also, avoiding ones that
+            //    already have a FRONTIER flag set, i.e. they've been added before?)
+
             current = frontier.remove(rng.gen_range(0, frontier.len()));
+
             if map.get_cell(current.0, current.1).visited {
                 // This neighbor is already part of the maze
                 continue;
@@ -46,7 +59,7 @@ impl Generator for Prims {
 
             // remove wall between last and current
             // add unvisited neighbors to frontier
-            
+
             let neighbors = map.get_neighbors(current.0, current.1);
 
             let potential_paths= map.get_visited_neighbors(current.0, current.1);
@@ -55,6 +68,9 @@ impl Generator for Prims {
             let from = potential_paths[rng.gen_range(0, potential_paths.len())];
             let to = current;
             map.open_path_between(to, from);
+
+
+
 
             frontier.extend_from_slice(&neighbors);
         }
